@@ -6,7 +6,6 @@ A SillyTavern extension that lets you clean up or fully rewrite any assistant me
 
 - **Polish**: Fix grammar, tighten phrasing, or enforce house style across chats
 - **Perspective Shifts**: Reframe answers for different audiences or tones in a single click
-- **Fact & Safety Passes**: Run specialized checks (compliance, hallucination sweeps, etc.) before sharing
 - **Full Rewrites**: Leave "Skip if no changes" off when you want the model to regenerate the entire message instead of making targeted edits
 
 ## Key Features
@@ -16,13 +15,6 @@ A SillyTavern extension that lets you clean up or fully rewrite any assistant me
 - `<search>` / `<replace>` tagging for deterministic edits when you need precise diffs
 - Uses your existing Connection Manager profiles so each step can target the best tool 
 - Non-invasive: normal chat flow stays untouched until you trigger a refinement
-
-## Quick Start
-
-1. Copy this folder into `data/default-user/extensions/`
-2. Reload SillyTavern — the extension enables automatically
-3. Configure one or more refinement steps under **Extensions → Final Response Processor**
-4. Click the wand on any assistant message to run your pipeline
 
 ## Configuring Steps
 
@@ -52,4 +44,3 @@ Enable **Saved Messages Macro** to add recent context to your prompts:
 - Watch the wand icon spin to confirm processing is in progress
 - Re-run the wand as many times as you need on the same message
 - If edits fail, double-check your prompts and make sure the model emits the expected tags
-- For fast QA passes, pair a lightweight model first, then hand off to a heavier rewrite model
