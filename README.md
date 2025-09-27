@@ -53,7 +53,3 @@ Enable **Saved Messages Macro** to add recent context to your prompts:
 - Re-run the wand as many times as you need on the same message
 - If edits fail, double-check your prompts and make sure the model emits the expected tags
 - For fast QA passes, pair a lightweight model first, then hand off to a heavier rewrite model
-
-## License
-
-Provided as-is for use with SillyTavern.
