@@ -374,10 +374,10 @@ async function initializeExtension() {
                 <div class="inline-drawer-content">
                     <div class="extension-description">Click the refinement button on any AI message to process it through your configured refinement steps.</div>
 
-                    <div class="saved-messages-toggle checkbox_label">
-                        <input type="checkbox" id="frp_saved_messages_toggle" ${savedMessagesToggle}>
+                    <label class="checkbox_label saved-messages-toggle" for="frp_saved_messages_toggle">
+                        <input type="checkbox" class="checkbox" id="frp_saved_messages_toggle" ${savedMessagesToggle}>
                         <span>Enable saved messages macro</span>
-                    </div>
+                    </label>
                     <div id="frp_saved_messages_count_container" class="saved-messages-settings${savedMessagesContainerClass}">
                         <label for="frp_saved_messages_count">Last messages to include:</label>
                         <input type="number" id="frp_saved_messages_count" class="text_pole" min="-1" value="${savedMessagesCount}">
@@ -782,6 +782,7 @@ function renderSteps() {
         const safeSystemPrompt = escapeHtml(step.systemPrompt || '');
         const safeUserMessage = escapeHtml(step.userMessage || '');
         const hasPreset = Boolean(step.presetId && findPresetById(step.presetId));
+        const skipCheckboxId = escapeHtml(`frp_skip_if_no_changes_${step.id}`);
         const presetOptions = presets.map(preset => {
             const selected = step.presetId === preset.id ? 'selected' : '';
             return `<option value="${escapeHtml(preset.id)}" ${selected}>${escapeHtml(preset.name)}</option>`;
@@ -825,8 +826,8 @@ function renderSteps() {
                     <label>User Message:</label>
                     <textarea class="step-user-message text_pole" rows="4">${safeUserMessage}</textarea>
 
-                    <label class="checkbox_label">
-                        <input type="checkbox" class="skip-if-no-changes" ${step.skipIfNoChanges ? 'checked' : ''}>
+                    <label class="checkbox_label" for="${skipCheckboxId}">
+                        <input type="checkbox" class="checkbox skip-if-no-changes" id="${skipCheckboxId}" ${step.skipIfNoChanges ? 'checked' : ''}>
                         <span>Skip if no changes needed</span>
                     </label>
                 </div>

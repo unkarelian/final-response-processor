@@ -75,15 +75,10 @@
     color: #f1c40f;
 }
 
-.final_response_step input[type="text"],
-.final_response_step select,
-.final_response_step textarea {
+.final_response_step .text_pole,
+.final_response_step .textarea_compact {
     width: 100%;
-    background-color: var(--SmartThemeBodyColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 3px;
-    padding: 5px;
-    color: var(--SmartThemeQuoteColor);
+    box-sizing: border-box;
 }
 
 .final_response_step textarea {
@@ -114,15 +109,9 @@
     cursor: pointer;
 }
 
-.final_response_step .checkbox_label span {
-    color: var(--SmartThemeBodyColor);
-    font-size: var(--mainFontSize);
-}
 
-/* Style select dropdowns consistently */
-.final_response_step select.text_pole {
-    appearance: none;
-    padding-right: 30px;
+.final_response_step .checkbox_label span {
+    font-size: var(--mainFontSize);
 }
 
 .saved-messages-toggle {
@@ -139,7 +128,6 @@
 }
 
 .saved-messages-toggle span {
-    color: var(--SmartThemeBodyColor);
     font-size: var(--mainFontSize);
 }
 
