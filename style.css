@@ -64,27 +64,15 @@
     gap: 6px;
 }
 
-.final_response_step .preset-action {
-    background-color: var(--SmartThemeBodyColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 3px;
-    padding: 4px 10px;
-    font-size: 0.85em;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
-    color: var(--SmartThemeQuoteColor);
+.final_response_step.preset-modified .step-preset,
+.final_response_step .step-preset.preset-modified {
+    border-color: #f1c40f;
 }
 
-.final_response_step .preset-action:hover {
-    background-color: var(--white20a);
-    color: var(--SmartThemeEmColor);
-}
-
-.final_response_step .preset-action.disabled {
-    opacity: 0.4;
-    cursor: default;
-    pointer-events: none;
+.final_response_step .preset-buttons[data-preset-modified="true"] .preset-action.preset-update,
+.final_response_step .preset-action.preset-update.needs-update {
+    border-color: #f1c40f;
+    color: #f1c40f;
 }
 
 .final_response_step input[type="text"],
@@ -103,12 +91,6 @@
     min-height: 50px;
 }
 
-#add_final_response_step {
-    margin-top: 10px;
-    width: auto;
-    display: inline-block;
-}
-
 #final_response_processor_settings .extension-description {
     display: block;
     margin-top: 5px;
@@ -116,36 +98,6 @@
     font-style: italic;
     color: var(--SmartThemeQuoteColor);
     opacity: 0.8;
-}
-
-/* Refinement button styles */
-.final_response_refine_button {
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: background-color 0.2s ease, opacity 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.7;
-}
-
-.final_response_refine_button:hover {
-    background-color: var(--white20a);
-    opacity: 1;
-}
-
-.final_response_refine_button:active {
-    background-color: var(--white30a);
-}
-
-.final_response_refine_button[disabled] {
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-.final_response_refine_button i {
-    font-size: 14px;
 }
 
 /* Add checkbox label styling */

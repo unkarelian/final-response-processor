@@ -119,8 +119,10 @@ function initializeSavedMessagesControls() {
 function syncPresetButtonsState(stepElement, hasPreset) {
     const buttons = stepElement.find('.preset-buttons');
     buttons.attr('data-has-preset', hasPreset ? 'true' : 'false');
-    buttons.find('.preset-action.preset-update').toggleClass('disabled', !hasPreset);
-    buttons.find('.preset-action.preset-delete').toggleClass('disabled', !hasPreset);
+    const updateButton = buttons.find('.preset-action.preset-update');
+    const deleteButton = buttons.find('.preset-action.preset-delete');
+    updateButton.toggleClass('disabled', !hasPreset).prop('disabled', !hasPreset);
+    deleteButton.toggleClass('disabled', !hasPreset).prop('disabled', !hasPreset);
 }
 
 function getStepById(stepId) {
@@ -128,17 +130,43 @@ function getStepById(stepId) {
     return settings.steps.find(step => step.id === stepId) || null;
 }
 
-function detachPresetIfChanged(stepId, stepElement) {
+function setPresetModifiedState(stepElement, isModified) {
+    stepElement.toggleClass('preset-modified', Boolean(isModified));
+    stepElement.find('.step-preset').toggleClass('preset-modified', Boolean(isModified));
+
+    const buttons = stepElement.find('.preset-buttons');
+    buttons.attr('data-preset-modified', Boolean(isModified).toString());
+    buttons.find('.preset-action.preset-update').toggleClass('needs-update', Boolean(isModified));
+}
+
+function syncPresetModificationState(stepId, stepElement) {
     const step = getStepById(stepId);
-    if (!step || !step.presetId) return;
+    if (!step) {
+        return;
+    }
+
+    if (!step.presetId) {
+        setPresetModifiedState(stepElement, false);
+        return;
+    }
 
     const preset = findPresetById(step.presetId);
-    if (!preset || step.systemPrompt !== preset.systemPrompt || step.userMessage !== preset.userMessage) {
+    if (!preset) {
         step.presetId = null;
         stepElement.find('.step-preset').val('');
+        setPresetModifiedState(stepElement, false);
         syncPresetButtonsState(stepElement, false);
         saveSettingsDebounced();
+        return;
     }
+
+    const stepSystemPrompt = step.systemPrompt ?? '';
+    const stepUserMessage = step.userMessage ?? '';
+    const presetSystemPrompt = preset.systemPrompt ?? '';
+    const presetUserMessage = preset.userMessage ?? '';
+
+    const isModified = stepSystemPrompt !== presetSystemPrompt || stepUserMessage !== presetUserMessage;
+    setPresetModifiedState(stepElement, isModified);
 }
 
 function applyPresetToStep(stepId, presetId, stepElement) {
@@ -147,6 +175,7 @@ function applyPresetToStep(stepId, presetId, stepElement) {
 
     if (!presetId) {
         step.presetId = null;
+        setPresetModifiedState(stepElement, false);
         syncPresetButtonsState(stepElement, false);
         saveSettingsDebounced();
         return;
@@ -167,6 +196,7 @@ function applyPresetToStep(stepId, presetId, stepElement) {
     stepElement.find('.step-system-prompt').val(step.systemPrompt);
     stepElement.find('.step-user-message').val(step.userMessage);
     syncPresetButtonsState(stepElement, true);
+    syncPresetModificationState(stepId, stepElement);
     saveSettingsDebounced();
 }
 
@@ -212,7 +242,7 @@ function createPresetFromStep(stepId) {
     rebuildStepsUI();
 }
 
-function updatePresetFromStep(stepId) {
+function updatePresetFromStep(stepId, stepElement = null) {
     const step = getStepById(stepId);
     if (!step || !step.presetId) {
         toastr.warning('No preset is attached to this step.');
@@ -229,6 +259,10 @@ function updatePresetFromStep(stepId) {
     preset.userMessage = step.userMessage || '';
     toastr.success('Preset updated.');
     saveSettingsDebounced();
+
+    if (stepElement) {
+        syncPresetModificationState(stepId, stepElement);
+    }
 }
 
 function deletePresetFromStep(stepId) {
@@ -356,9 +390,9 @@ async function initializeExtension() {
                         ${renderSteps()}
                     </div>
                     
-                    <div class="menu_button" id="add_final_response_step">
+                    <button type="button" class="menu_button" id="add_final_response_step">
                         <i class="fa-solid fa-plus"></i> Add Step
-                    </div>
+                    </button>
                 </div>
             </div>
         </div>
@@ -774,9 +808,9 @@ function renderSteps() {
                             ${presetOptions}
                         </select>
                         <div class="preset-buttons" data-has-preset="${hasPreset}">
-                            <div class="preset-action preset-save">Save as Preset</div>
-                            <div class="preset-action preset-update${hasPreset ? '' : ' disabled'}">Update Preset</div>
-                            <div class="preset-action preset-delete${hasPreset ? '' : ' disabled'}">Delete Preset</div>
+                            <button type="button" class="menu_button preset-action preset-save">Save as Preset</button>
+                            <button type="button" class="menu_button preset-action preset-update${hasPreset ? '' : ' disabled'}"${hasPreset ? '' : ' disabled="disabled"'}>Update Preset</button>
+                            <button type="button" class="menu_button preset-action preset-delete${hasPreset ? '' : ' disabled'}"${hasPreset ? '' : ' disabled="disabled"'}>Delete Preset</button>
                         </div>
                     </div>
 
@@ -829,12 +863,12 @@ function attachStepHandlers() {
 
         stepElement.find('.step-system-prompt').on('input', function() {
             updateStep(stepId, 'systemPrompt', $(this).val());
-            detachPresetIfChanged(stepId, stepElement);
+            syncPresetModificationState(stepId, stepElement);
         });
 
         stepElement.find('.step-user-message').on('input', function() {
             updateStep(stepId, 'userMessage', $(this).val());
-            detachPresetIfChanged(stepId, stepElement);
+            syncPresetModificationState(stepId, stepElement);
         });
 
         stepElement.find('.skip-if-no-changes').on('change', function() {
@@ -856,7 +890,7 @@ function attachStepHandlers() {
 
         stepElement.find('.preset-update').on('click', function() {
             if ($(this).hasClass('disabled')) return;
-            updatePresetFromStep(stepId);
+            updatePresetFromStep(stepId, stepElement);
         });
 
         stepElement.find('.preset-delete').on('click', function() {
@@ -875,6 +909,8 @@ function attachStepHandlers() {
         stepElement.find('.move-down').on('click', function() {
             moveStep(stepId, 1);
         });
+
+        syncPresetModificationState(stepId, stepElement);
     });
 }
 
@@ -977,14 +1013,29 @@ function addRefinementButtonToElement(messageElement, messageId) {
     }
     
     // Create the refinement button
-    const button = $('<div class="mes_button final_response_refine_button" title="Refine this message" data-i18n="[title]Refine this message">' +
-                    '<i class="fa-solid fa-wand-magic-sparkles"></i>' +
-                    '</div>');
-    
+    const button = $(`
+        <div
+            class="mes_button fa-solid fa-wand-magic-sparkles final_response_refine_button"
+            title="Refine this message"
+            data-i18n="[title]Refine this message"
+            tabindex="0"
+            role="button"
+            aria-label="Refine this message"
+        ></div>
+    `);
+
     // Add click handler
     button.on('click', async function(e) {
         e.stopPropagation();
         await refineMessage(messageId);
+    });
+
+    button.on('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            $(this).trigger('click');
+        }
     });
     
     // Add to extra buttons after the narrate button if it exists
