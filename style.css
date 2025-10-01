@@ -61,7 +61,15 @@
 
 .final_response_step .preset-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
+}
+
+.final_response_step .preset-buttons .menu_button {
+    font-size: 12px;
+    padding: 4px 8px;
+    flex: 1;
+    min-width: 0;
 }
 
 .final_response_step.preset-modified .step-preset,
@@ -146,4 +154,16 @@
     font-size: 0.85em;
     color: var(--SmartThemeQuoteColor);
     opacity: 0.75;
+}
+
+.frp-preset-management {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+.frp-preset-management .menu_button {
+    min-width: 200px;
 }

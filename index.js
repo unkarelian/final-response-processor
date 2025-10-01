@@ -121,8 +121,10 @@ function syncPresetButtonsState(stepElement, hasPreset) {
     buttons.attr('data-has-preset', hasPreset ? 'true' : 'false');
     const updateButton = buttons.find('.preset-action.preset-update');
     const deleteButton = buttons.find('.preset-action.preset-delete');
+    const exportButton = buttons.find('.preset-action.preset-export');
     updateButton.toggleClass('disabled', !hasPreset).prop('disabled', !hasPreset);
     deleteButton.toggleClass('disabled', !hasPreset).prop('disabled', !hasPreset);
+    exportButton.toggleClass('disabled', !hasPreset).prop('disabled', !hasPreset);
 }
 
 function getStepById(stepId) {
@@ -393,6 +395,12 @@ async function initializeExtension() {
                     <button type="button" class="menu_button" id="add_final_response_step">
                         <i class="fa-solid fa-plus"></i> Add Step
                     </button>
+
+                    <div class="frp-preset-management">
+                        <button type="button" class="menu_button" id="frp_import_presets">
+                            <i class="fa-solid fa-upload"></i> Import Preset
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -406,6 +414,7 @@ async function initializeExtension() {
     
     // Event handlers
     $('#add_final_response_step').on('click', addStep);
+    $('#frp_import_presets').on('click', handleImportPresets);
     
     // Add refinement buttons to existing messages with a small delay to ensure DOM is ready
     setTimeout(() => {
@@ -812,6 +821,7 @@ function renderSteps() {
                             <button type="button" class="menu_button preset-action preset-save">Save as Preset</button>
                             <button type="button" class="menu_button preset-action preset-update${hasPreset ? '' : ' disabled'}"${hasPreset ? '' : ' disabled="disabled"'}>Update Preset</button>
                             <button type="button" class="menu_button preset-action preset-delete${hasPreset ? '' : ' disabled'}"${hasPreset ? '' : ' disabled="disabled"'}>Delete Preset</button>
+                            <button type="button" class="menu_button preset-action preset-export${hasPreset ? '' : ' disabled'}"${hasPreset ? '' : ' disabled="disabled"'}>Export Preset</button>
                         </div>
                     </div>
 
@@ -897,6 +907,11 @@ function attachStepHandlers() {
         stepElement.find('.preset-delete').on('click', function() {
             if ($(this).hasClass('disabled')) return;
             deletePresetFromStep(stepId);
+        });
+
+        stepElement.find('.preset-export').on('click', function() {
+            if ($(this).hasClass('disabled')) return;
+            exportPresetFromStep(stepId);
         });
 
         stepElement.find('.remove-step').on('click', function() {
@@ -1350,6 +1365,181 @@ function buildSavedMessages(context, messageId) {
     }
 
     return collected.join('\n\n');
+}
+
+// Export preset from a specific step
+function exportPresetFromStep(stepId) {
+    try {
+        const step = getStepById(stepId);
+        if (!step || !step.presetId) {
+            toastr.error('No preset is attached to this step.');
+            return;
+        }
+
+        const currentPreset = findPresetById(step.presetId);
+        if (!currentPreset) {
+            toastr.error('Selected preset not found.');
+            return;
+        }
+
+        const exportData = {
+            version: '1.0',
+            extension: 'final-response-processor',
+            timestamp: new Date().toISOString(),
+            preset: currentPreset
+        };
+
+        const exportJson = JSON.stringify(exportData, null, 2);
+
+        // Create blob and download
+        const blob = new Blob([exportJson], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `final-response-processor-preset-${currentPreset.name.replace(/[^a-z0-9]/gi, '_')}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        toastr.success(`Exported preset "${currentPreset.name}" successfully.`);
+    } catch (error) {
+        console.error('Final Response Processor: Export error:', error);
+        toastr.error(`Failed to export preset: ${error.message}`);
+    }
+}
+
+// Import presets from JSON
+async function handleImportPresets() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+
+    input.onchange = async function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const jsonData = e.target.result;
+                const result = await importPresets(jsonData);
+
+                // Rebuild UI to show imported presets
+                rebuildStepsUI();
+
+                // Show appropriate success message
+                let message = `Successfully imported preset: ${result.preset.name}`;
+                if (result.action === 'overwrite') {
+                    message = `Successfully overwritten preset: ${result.preset.name}`;
+                } else if (result.action === 'renamed') {
+                    message = `Successfully imported preset as: ${result.preset.name}`;
+                }
+                toastr.success(message);
+            } catch (error) {
+                console.error('Final Response Processor: Import error:', error);
+                toastr.error(error.message);
+            }
+        };
+
+        reader.onerror = function() {
+            toastr.error('Failed to read file.');
+        };
+
+        reader.readAsText(file);
+    };
+
+    input.click();
+}
+
+// Import presets from JSON data
+async function importPresets(jsonData) {
+    try {
+        const importData = JSON.parse(jsonData);
+
+        // Validate import data structure
+        if (!importData.preset) {
+            throw new Error('Invalid preset file: missing preset data');
+        }
+
+        if (importData.extension !== 'final-response-processor') {
+            throw new Error('Invalid preset file: not a Final Response Processor preset file');
+        }
+
+        if (!validatePreset(importData.preset)) {
+            throw new Error('Invalid preset file: preset data is malformed');
+        }
+
+        const settings = getExtensionSettings();
+        const existingPresets = settings.presets || [];
+
+        // Check for existing preset with same name
+        const existingPreset = existingPresets.find(p => p.name.toLowerCase() === importData.preset.name.toLowerCase());
+        let finalPreset = { ...importData.preset };
+
+        if (existingPreset) {
+            const action = await handleDuplicatePreset(existingPreset, importData.preset);
+
+            if (action.action === 'cancel') {
+                throw new Error('Import cancelled by user');
+            } else if (action.action === 'overwrite') {
+                // Overwrite existing preset
+                finalPreset.id = existingPreset.id;
+                const index = existingPresets.findIndex(p => p.id === existingPreset.id);
+                existingPresets[index] = finalPreset;
+                saveSettingsDebounced();
+                return { preset: finalPreset, action: 'overwrite' };
+            } else if (action.action === 'rename') {
+                // Rename and create new
+                finalPreset.name = action.newName;
+            }
+        }
+
+        // Generate new ID for new preset
+        finalPreset.id = generatePresetId();
+        existingPresets.push(finalPreset);
+        saveSettingsDebounced();
+        return { preset: finalPreset, action: existingPreset ? 'renamed' : 'new' };
+
+    } catch (error) {
+        console.error('Final Response Processor: Error importing presets:', error);
+        throw new Error(`Failed to import presets: ${error.message}`);
+    }
+}
+
+// Validate preset structure
+function validatePreset(preset) {
+    if (!preset || typeof preset !== 'object') return false;
+    if (!preset.name || typeof preset.name !== 'string') return false;
+    if (!preset.systemPrompt || typeof preset.systemPrompt !== 'string') return false;
+    if (!preset.userMessage || typeof preset.userMessage !== 'string') return false;
+    return true;
+}
+
+// Handle duplicate preset by asking user what to do
+async function handleDuplicatePreset(existingPreset, importedPreset) {
+    return new Promise((resolve) => {
+        const action = confirm(
+            `A preset named "${importedPreset.name}" already exists.\n\n` +
+            `Existing: "${existingPreset.systemPrompt.substring(0, 50)}..."\n` +
+            `Importing: "${importedPreset.systemPrompt.substring(0, 50)}..."\n\n` +
+            `Click:\n` +
+            `• "OK" to overwrite the existing preset\n` +
+            `• "Cancel" to import with a new name\n`
+        );
+
+        if (action) {
+            resolve({ action: 'overwrite' });
+        } else {
+            // Rename and create new
+            const newName = prompt(`Enter a new name for the preset "${importedPreset.name}":`, `${importedPreset.name} - imported`);
+            if (newName && newName.trim()) {
+                resolve({ action: 'rename', newName: newName.trim() });
+            } else {
+                resolve({ action: 'cancel' });
+            }
+        }
+    });
 }
 
 // Initialize when ready
