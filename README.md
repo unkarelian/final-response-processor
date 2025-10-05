@@ -15,6 +15,8 @@ A SillyTavern extension that lets you clean up or fully rewrite any assistant me
 - `<search>` / `<replace>` tagging for deterministic edits when you need precise diffs
 - Uses your existing Connection Manager profiles so each step can target the best tool 
 - Non-invasive: normal chat flow stays untouched until you trigger a refinement
+ - Optional review popup to Accept/Reject changes with highlighted diff
+ - Auto-mode toggle to apply changes automatically (legacy behavior)
 
 ## Configuring Steps
 
@@ -44,3 +46,7 @@ Enable **Saved Messages Macro** to add recent context to your prompts:
 - Watch the wand icon spin to confirm processing is in progress
 - Re-run the wand as many times as you need on the same message
 - If edits fail, double-check your prompts and make sure the model emits the expected tags
+
+## Review Popup and Auto-mode
+
+When Auto-mode is disabled in the extension settings, refinements open a popup showing a side-by-side diff between the original and the proposed message. You can Accept to apply the changes or Reject to keep the original. Re-enable Auto-mode to return to automatic application without review.

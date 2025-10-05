@@ -38,6 +38,9 @@ export { MODULE_NAME };
 
 let isProcessing = false;
 
+// Utility to ensure we only attach one global modal at a time
+let frpActiveModal = null;
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -112,6 +115,20 @@ function initializeSavedMessagesControls() {
         }
 
         settings.savedMessagesCount = sanitizedValue;
+        saveSettingsDebounced();
+    });
+}
+
+function initializeAutoModeControl() {
+    const settings = getExtensionSettings();
+    const toggle = $('#frp_auto_mode_toggle');
+    if (!toggle.length) return;
+
+    // Initial state
+    toggle.prop('checked', Boolean(settings.autoMode));
+
+    toggle.on('change', () => {
+        settings.autoMode = toggle.is(':checked');
         saveSettingsDebounced();
     });
 }
@@ -310,6 +327,7 @@ async function initializeExtension() {
         extension_settings[extensionName] = {
             enabled: true,
             presets: [],
+            autoMode: true,
             enableSavedMessages: false,
             savedMessagesCount: 3,
             steps: [{
@@ -327,6 +345,10 @@ async function initializeExtension() {
     const settings = getExtensionSettings();
     settings.presets = settings.presets || [];
     settings.steps = settings.steps || [];
+
+    if (!('autoMode' in settings)) {
+        settings.autoMode = true;
+    }
 
     if (!('enableSavedMessages' in settings)) {
         settings.enableSavedMessages = false;
@@ -363,6 +385,7 @@ async function initializeExtension() {
     
     // Create settings UI
     const savedMessagesToggle = settings.enableSavedMessages ? 'checked' : '';
+    const autoModeToggle = settings.autoMode ? 'checked' : '';
     const savedMessagesContainerClass = settings.enableSavedMessages ? '' : ' hidden';
     const savedMessagesCount = escapeHtml(String(settings.savedMessagesCount ?? 3));
 
@@ -375,6 +398,11 @@ async function initializeExtension() {
                 </div>
                 <div class="inline-drawer-content">
                     <div class="extension-description">Click the refinement button on any AI message to process it through your configured refinement steps.</div>
+
+                    <label class="checkbox_label saved-messages-toggle" for="frp_auto_mode_toggle">
+                        <input type="checkbox" class="checkbox" id="frp_auto_mode_toggle" ${autoModeToggle}>
+                        <span>Auto-mode: apply changes automatically</span>
+                    </label>
 
                     <label class="checkbox_label saved-messages-toggle" for="frp_saved_messages_toggle">
                         <input type="checkbox" class="checkbox" id="frp_saved_messages_toggle" ${savedMessagesToggle}>
@@ -411,6 +439,7 @@ async function initializeExtension() {
     settingsContainer.append(settingsHtml);
 
     initializeSavedMessagesControls();
+    initializeAutoModeControl();
     
     // Event handlers
     $('#add_final_response_step').on('click', addStep);
@@ -1083,6 +1112,292 @@ function addRefinementButtonToElement(messageElement, messageId) {
     });
 }
 
+// Create and show a diff review modal. Returns a Promise<boolean> where true means accept.
+function showDiffPopup(originalText, newText) {
+    return new Promise((resolve) => {
+        try {
+            // If an active modal exists, remove it first
+            if (frpActiveModal) {
+                try { frpActiveModal.remove(); } catch (e) { /* noop */ }
+                frpActiveModal = null;
+            }
+
+            const ops = computeLineDiff(String(originalText || ''), String(newText || ''));
+            const pairs = pairLineOps(ops);
+
+            const originalHtml = pairs.map(p => {
+                if (p.type === 'equal') {
+                    return `<div class="frp-line frp-unchanged">${escapeHtml(p.a)}</div>`;
+                }
+                if (p.removeOnly) {
+                    return `<div class="frp-line frp-removed">${escapeHtml(p.a)}</div>`;
+                }
+                if (p.addOnly) {
+                    return `<div class="frp-line frp-line-empty">&nbsp;</div>`;
+                }
+                return `<div class="frp-line">${renderWordDiffOriginal(p.a, p.b)}</div>`;
+            }).join('');
+
+            const proposedHtml = pairs.map(p => {
+                if (p.type === 'equal') {
+                    return `<div class="frp-line frp-unchanged">${escapeHtml(p.b)}</div>`;
+                }
+                if (p.addOnly) {
+                    return `<div class="frp-line frp-added">${escapeHtml(p.b)}</div>`;
+                }
+                if (p.removeOnly) {
+                    return `<div class="frp-line frp-line-empty">&nbsp;</div>`;
+                }
+                return `<div class="frp-line">${renderWordDiffProposed(p.a, p.b)}</div>`;
+            }).join('');
+
+            const modal = $(`
+                <div class="frp-diff-overlay" tabindex="-1" role="dialog" aria-modal="true">
+                    <div class="frp-diff-modal">
+                        <div class="frp-diff-header">
+                            <div class="frp-diff-title">Review Changes</div>
+                            <button class="frp-diff-close" aria-label="Close">×</button>
+                        </div>
+                        <div class="frp-diff-body">
+                            <div class="frp-diff-columns">
+                                <div class="frp-diff-column">
+                                    <div class="frp-diff-column-title">Original</div>
+                                    <div class="frp-diff-content" id="frp_diff_original">${originalHtml}</div>
+                                </div>
+                                <div class="frp-diff-column">
+                                    <div class="frp-diff-column-title">Proposed</div>
+                                    <div class="frp-diff-content" id="frp_diff_proposed">${proposedHtml}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="frp-diff-footer">
+                            <button class="menu_button frp-diff-reject">Reject</button>
+                            <button class="menu_button frp-diff-accept">Accept</button>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            // Close helpers
+            const cleanup = (result) => {
+                try {
+                    modal.remove();
+                } catch (e) { /* noop */ }
+                frpActiveModal = null;
+                $(document).off('keydown.frpDiff');
+                resolve(result);
+            };
+
+            modal.on('click', (e) => {
+                // Click outside modal closes (reject)
+                if ($(e.target).closest('.frp-diff-modal').length === 0) {
+                    cleanup(false);
+                }
+            });
+            modal.find('.frp-diff-close').on('click', () => cleanup(false));
+            modal.find('.frp-diff-reject').on('click', () => cleanup(false));
+            modal.find('.frp-diff-accept').on('click', () => cleanup(true));
+            $(document).on('keydown.frpDiff', (e) => {
+                if (e.key === 'Escape') {
+                    $(document).off('keydown.frpDiff');
+                    cleanup(false);
+                }
+            });
+
+            $('body').append(modal);
+            frpActiveModal = modal;
+            // Focus for accessibility
+            setTimeout(() => {
+                try { modal.focus(); } catch (e) { /* noop */ }
+            }, 0);
+        } catch (err) {
+            console.error('Final Response Processor: Failed to show diff popup:', err);
+            resolve(false);
+        }
+    });
+}
+
+// Compute a simple line-based diff using LCS
+function computeLineDiff(originalText, newText) {
+    const a = String(originalText || '').split('\n');
+    const b = String(newText || '').split('\n');
+    const n = a.length;
+    const m = b.length;
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) {
+        dp[i] = new Array(m + 1).fill(0);
+    }
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+            else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j]) {
+            ops.push({ type: 'equal', text: a[i] });
+            i++; j++;
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+            ops.push({ type: 'remove', text: a[i] });
+            i++;
+        } else {
+            ops.push({ type: 'add', text: b[j] });
+            j++;
+        }
+    }
+    while (i < n) { ops.push({ type: 'remove', text: a[i++] }); }
+    while (j < m) { ops.push({ type: 'add', text: b[j++] }); }
+    return ops;
+}
+
+// SillyTavern-standard popup variant
+function showDiffPopupUsingPopupApi(originalText, newText) {
+    return new Promise(async (resolve) => {
+        try {
+            const ops = computeLineDiff(String(originalText || ''), String(newText || ''));
+            const pairs = pairLineOps(ops);
+
+            const originalHtml = pairs.map(p => {
+                if (p.type === 'equal') return `<div class="frp-line frp-unchanged">${escapeHtml(p.a)}</div>`;
+                if (p.removeOnly) return `<div class="frp-line frp-removed">${escapeHtml(p.a)}</div>`;
+                if (p.addOnly) return `<div class="frp-line frp-line-empty">&nbsp;</div>`;
+                return `<div class="frp-line">${renderWordDiffOriginal(p.a, p.b)}</div>`;
+            }).join('');
+
+            const proposedHtml = pairs.map(p => {
+                if (p.type === 'equal') return `<div class="frp-line frp-unchanged">${escapeHtml(p.b)}</div>`;
+                if (p.addOnly) return `<div class="frp-line frp-added">${escapeHtml(p.b)}</div>`;
+                if (p.removeOnly) return `<div class="frp-line frp-line-empty">&nbsp;</div>`;
+                return `<div class="frp-line">${renderWordDiffProposed(p.a, p.b)}</div>`;
+            }).join('');
+
+            const content = `
+                <div class="frp-diff-columns">
+                    <div class="frp-diff-column">
+                        <div class="frp-diff-column-title">Original</div>
+                        <div class="frp-diff-content" id="frp_diff_original">${originalHtml}</div>
+                    </div>
+                    <div class="frp-diff-column">
+                        <div class="frp-diff-column-title">Proposed</div>
+                        <div class="frp-diff-content" id="frp_diff_proposed">${proposedHtml}</div>
+                    </div>
+                </div>`;
+
+            const Popup = getContext().Popup;
+            const result = await Popup.show.text('Review Changes', content, {
+                leftAlign: true,
+                wide: true,
+                allowVerticalScrolling: true,
+                okButton: 'Accept',
+                cancelButton: 'Reject',
+            });
+
+            resolve(result === 1);
+        } catch (err) {
+            console.error('Final Response Processor: Failed to show diff popup:', err);
+            resolve(false);
+        }
+    });
+}
+
+// Pair line ops into aligned rows for side-by-side rendering
+function pairLineOps(ops) {
+    const pairs = [];
+    let i = 0;
+    while (i < ops.length) {
+        const op = ops[i];
+        if (op.type === 'equal') {
+            pairs.push({ type: 'equal', a: op.text, b: op.text });
+            i++;
+            continue;
+        }
+        const removes = [];
+        const adds = [];
+        while (i < ops.length && ops[i].type === 'remove') { removes.push(ops[i++].text); }
+        while (i < ops.length && ops[i].type === 'add') { adds.push(ops[i++].text); }
+        const max = Math.max(removes.length, adds.length);
+        for (let k = 0; k < max; k++) {
+            const a = k < removes.length ? removes[k] : '';
+            const b = k < adds.length ? adds[k] : '';
+            pairs.push({ type: 'changed', a, b, removeOnly: b === '', addOnly: a === '' });
+        }
+    }
+    return pairs;
+}
+
+// Tokenize preserving spaces and punctuation
+function tokenizeForDiff(str) {
+    const re = /(\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_])/g;
+    const tokens = [];
+    let m;
+    while ((m = re.exec(String(str))) !== null) {
+        tokens.push(m[0]);
+    }
+    return tokens;
+}
+
+// Word/token-level LCS diff
+function computeWordDiff(aStr, bStr) {
+    const a = tokenizeForDiff(aStr);
+    const b = tokenizeForDiff(bStr);
+    const n = a.length, m = b.length;
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) dp[i] = new Array(m + 1).fill(0);
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+            else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+    const ops = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j]) {
+            ops.push({ type: 'equal', text: a[i] });
+            i++; j++;
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+            ops.push({ type: 'remove', text: a[i++] });
+        } else {
+            ops.push({ type: 'add', text: b[j++] });
+        }
+    }
+    while (i < n) ops.push({ type: 'remove', text: a[i++] });
+    while (j < m) ops.push({ type: 'add', text: b[j++] });
+    return ops;
+}
+
+function renderWordDiffOriginal(aStr, bStr) {
+    const ops = computeWordDiff(aStr, bStr);
+    let html = '';
+    for (const op of ops) {
+        if (op.type === 'equal') {
+            html += `<span class="frp-word frp-word-unchanged">${escapeHtml(op.text)}</span>`;
+        } else if (op.type === 'remove') {
+            html += `<span class="frp-word frp-word-removed">${escapeHtml(op.text)}</span>`;
+        } else {
+            // skip 'add' on original side
+        }
+    }
+    return html || '&nbsp;';
+}
+
+function renderWordDiffProposed(aStr, bStr) {
+    const ops = computeWordDiff(aStr, bStr);
+    let html = '';
+    for (const op of ops) {
+        if (op.type === 'equal') {
+            html += `<span class="frp-word frp-word-unchanged">${escapeHtml(op.text)}</span>`;
+        } else if (op.type === 'add') {
+            html += `<span class="frp-word frp-word-added">${escapeHtml(op.text)}</span>`;
+        } else {
+            // skip 'remove' on proposed side
+        }
+    }
+    return html || '&nbsp;';
+}
+
 // Helper function to trigger ProsePolisher analysis
 async function triggerProsePolisherAnalysis() {
     try {
@@ -1261,18 +1576,28 @@ async function processMessage(messageId) {
             }
         }
         
-        // Update the message with the processed content
+        // Decide whether to auto-apply or show review popup
         if (draftContent !== message.mes) {
-            message.mes = draftContent;
-            
-            // Save the chat first
-            await saveChatConditional();
-            
-            // Reload the current chat to properly refresh the display
-            // This follows SillyTavern conventions and ensures all UI elements are properly updated
-            await reloadCurrentChat();
-            
-            console.log('Final Response Processor: Message updated and chat reloaded successfully');
+            const settings = getExtensionSettings();
+            if (settings.autoMode) {
+                // Old behavior: apply immediately
+                message.mes = draftContent;
+                await saveChatConditional();
+                await reloadCurrentChat();
+                console.log('Final Response Processor: Message updated (auto mode) and chat reloaded');
+            } else {
+                // Show popup for review
+                const accepted = await showDiffPopupUsingPopupApi(message.mes, draftContent);
+                if (accepted) {
+                    message.mes = draftContent;
+                    await saveChatConditional();
+                    await reloadCurrentChat();
+                    console.log('Final Response Processor: Changes accepted; message updated and chat reloaded');
+                } else {
+                    console.log('Final Response Processor: Changes rejected; original message preserved');
+                    toastr.info('Refinement rejected; original kept');
+                }
+            }
         } else {
             console.log('Final Response Processor: No changes made to message');
         }

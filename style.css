@@ -167,3 +167,70 @@
 .frp-preset-management .menu_button {
     min-width: 200px;
 }
+
+/* Diff review layout (content inside SillyTavern Popup) */
+
+.frp-diff-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.frp-diff-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.frp-diff-column-title {
+    font-weight: bold;
+    margin-bottom: 6px;
+    color: var(--SmartThemeEmColor);
+}
+
+.frp-diff-content {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px;
+    font-family: var(--monoFont, monospace);
+    white-space: normal;
+    line-height: 1.35;
+}
+
+.frp-line {
+    padding: 2px 4px;
+    border-radius: 4px;
+    word-break: break-word;
+}
+
+.frp-unchanged {}
+
+.frp-removed {
+    background: rgba(231, 76, 60, 0.15);
+    color: var(--redText, #e74c3c);
+}
+
+.frp-added {
+    background: rgba(46, 204, 113, 0.15);
+    color: var(--greenText, #2ecc71);
+}
+
+/* Footer removed: using default popup buttons */
+
+/* Word-level diff styling */
+.frp-word-removed {
+    background: rgba(231, 76, 60, 0.25);
+    color: var(--redText, #e74c3c);
+    border-radius: 3px;
+}
+
+.frp-word-added {
+    background: rgba(46, 204, 113, 0.25);
+    color: var(--greenText, #2ecc71);
+    border-radius: 3px;
+}
+
+.frp-line-empty {
+    opacity: 0.4;
+    min-height: 1em;
+}
